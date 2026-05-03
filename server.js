@@ -102,14 +102,12 @@ io.on('connection', (socket) => {
 
 // Start server
 const PORT = process.env.PORT || 5000;
-const HOST = process.env.HOST || 'localhost';
-
+const HOST = process.env.HOST || '0.0.0.0';
 const startServer = async () => {
   await connectDB();
 
   server.listen(PORT, HOST, () => {
-    logger.info(`Server running in ${process.env.NODE_ENV} mode on http://${HOST}:${PORT}`);
-  });
+logger.info(`Server running on port ${PORT}`);  });
 };
 
 // Graceful shutdown

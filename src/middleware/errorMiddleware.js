@@ -88,7 +88,8 @@ const errorMiddleware = (err, req, res, next) => {
  */
 const notFoundMiddleware = (req, res, next) => {
   const error = new Error(`Not Found - ${req.method} ${req.path}`);
-  res.status(404);
+  error.status = 404;
+  error.code = 'NOT_FOUND';
   next(error);
 };
 

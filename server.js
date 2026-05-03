@@ -25,6 +25,9 @@ const io = new Server(server, {
   }
 });
 
+// Trust proxy (required when behind a reverse proxy / load balancer)
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet());
 app.use(mongoSanitize());

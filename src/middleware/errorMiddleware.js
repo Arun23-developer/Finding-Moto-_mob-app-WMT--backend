@@ -54,16 +54,19 @@ const errorMiddleware = (err, req, res, next) => {
       code = 'VALIDATION_ERROR';
     }
 
-    // Log error
-    logger.error('Request error', {
-      status,
-      message,
-      code,
-      path: req.path,
-      method: req.method,
-      userId: req.user?.id,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    // Log error (skip noisy browser-auto-requests)
+    const silentPaths = ['/favicon.ico'];
+    if (!silentPaths.includes(req.path)) {
+      logger.error('Request error', {
+        status,
+        message,
+        code,
+        path: req.path,
+        method: req.method,
+        userId: req.user?.id,
+        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      });
+    }
 
     // Send response
     res.status(status).json({

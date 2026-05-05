@@ -1,0 +1,63 @@
+{
+  "name": "finding-moto-backend",
+  "version": "1.0.0",
+  "description": "Finding Moto - Backend API",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "seed:admin": "node scripts/seedAdmin.js",
+    "seed:users": "node scripts/seedUsers.js",
+    "seed:all": "node scripts/seedAllData.js",
+    "seed:delivery-agents": "node scripts/seedDeliveryAgents.js",
+    "seed:products": "node scripts/seedProducts.js",
+    "seed:mechanic-products": "node scripts/seedMechanicProducts.js",
+    "seed:services": "node scripts/seedServices.js",
+    "seed:history": "node scripts/seedHistoricalMarketplace.js",
+    "embeddings:backfill": "node scripts/backfillProductEmbeddings.js",
+    "approval:pending": "node scripts/setApprovalPending.js",
+    "approval:approve": "node scripts/approveAllPending.js",
+    "approval:pending-agents": "node scripts/setDeliveryAgentsPending.js",
+    "approval:approve-agents": "node scripts/approveDeliveryAgents.js"
+  },
+  "keywords": [
+    "express",
+    "mongodb",
+    "nodejs",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@types/compression": "^1.8.1",
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.10.0",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.18.2",
+    "google-auth-library": "^10.5.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.0.3",
+    "multer": "^2.0.2",
+    "nodemailer": "^8.0.1",
+    "openai": "^6.32.0",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/morgan": "^1.9.9",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^20.10.6",
+    "@types/nodemailer": "^7.0.10",
+    "morgan": "^1.10.0",
+    "nodemon": "^3.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

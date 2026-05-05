@@ -7,11 +7,16 @@ exports.refreshProductEmbeddingById = exports.refreshProductEmbedding = exports.
 const openai_1 = __importDefault(require("openai"));
 const Product_1 = __importDefault(require("../models/Product"));
 const EMBEDDING_MODEL = 'text-embedding-3-small';
-const openai = new openai_1.default({ apiKey: process.env.OPENAI_KEY || '' });
 const canUseEmbeddings = () => {
     return Boolean(process.env.OPENAI_KEY);
 };
 exports.canUseEmbeddings = canUseEmbeddings;
+const getOpenAIClient = () => {
+    if (!(0, exports.canUseEmbeddings)()) {
+        return null;
+    }
+    return new openai_1.default({ apiKey: process.env.OPENAI_KEY });
+};
 const buildProductEmbeddingText = (product) => {
     return [
         `name: ${product.name || ''}`,
@@ -25,7 +30,10 @@ const createEmbedding = async (input) => {
     const value = input.trim();
     if (!value)
         return [];
-    const response = await openai.embeddings.create({
+    const client = getOpenAIClient();
+    if (!client)
+        return [];
+    const response = await client.embeddings.create({
         model: EMBEDDING_MODEL,
         input: value,
     });

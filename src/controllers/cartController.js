@@ -10,6 +10,13 @@ const Product_1 = __importDefault(require("../models/Product"));
 const UNAVAILABLE_MESSAGE = 'This product is currently unavailable';
 const OUT_OF_STOCK_MESSAGE = 'Product is currently out of stock';
 const getBuyerId = (req) => req.user._id;
+const parseRequestedQuantity = (value) => {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+        return null;
+    }
+    return parsed;
+};
 const serializeCartItem = (item) => {
     const productDoc = item.product && typeof item.product === 'object' ? item.product : null;
     const productStatus = productDoc?.productStatus;
@@ -101,7 +108,11 @@ const addCartItem = async (req, res) => {
             res.status(400).json({ success: false, message: 'Product id is required' });
             return;
         }
-        const normalizedQuantity = Math.max(1, Number(quantity) || 1);
+        const normalizedQuantity = parseRequestedQuantity(quantity);
+        if (!normalizedQuantity) {
+            res.status(400).json({ success: false, message: 'Quantity must be a whole number greater than 0' });
+            return;
+        }
         const validated = await getValidatedProduct(productId);
         if (hasValidationError(validated)) {
             res.status(validated.error.status).json({ success: false, message: validated.error.message });
@@ -162,7 +173,11 @@ const updateCartItemQuantity = async (req, res) => {
         const buyerId = getBuyerId(req);
         const { id } = req.params;
         const { quantity } = req.body;
-        const normalizedQuantity = Math.max(1, Number(quantity) || 1);
+        const normalizedQuantity = parseRequestedQuantity(quantity);
+        if (!normalizedQuantity) {
+            res.status(400).json({ success: false, message: 'Quantity must be a whole number greater than 0' });
+            return;
+        }
         const cartItem = await Cart_1.default.findOne({ _id: id, buyer: buyerId });
         if (!cartItem) {
             res.status(404).json({ success: false, message: 'Cart item not found' });

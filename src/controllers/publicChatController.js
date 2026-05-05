@@ -7,9 +7,14 @@ exports.publicChat = void 0;
 const openai_1 = __importDefault(require("openai"));
 const Product_1 = __importDefault(require("../models/Product"));
 const embeddings_1 = require("../utils/embeddings");
-const openai = new openai_1.default({
-    apiKey: process.env.OPENAI_KEY || '',
-});
+const getOpenAIClient = () => {
+    if (!process.env.OPENAI_KEY) {
+        return null;
+    }
+    return new openai_1.default({
+        apiKey: process.env.OPENAI_KEY,
+    });
+};
 const publicChat = async (req, res) => {
     try {
         const userMessage = req.body?.message?.trim();
@@ -18,6 +23,11 @@ const publicChat = async (req, res) => {
             return;
         }
         if (!process.env.OPENAI_KEY) {
+            res.status(500).json({ reply: 'OPENAI_KEY is missing in server environment.' });
+            return;
+        }
+        const openai = getOpenAIClient();
+        if (!openai) {
             res.status(500).json({ reply: 'OPENAI_KEY is missing in server environment.' });
             return;
         }

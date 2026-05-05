@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.confirmOrderReceived = exports.updateOrderStatus = exports.getOrders = exports.getOrderStats = exports.cancelBuyerOrder = exports.getBuyerOrders = exports.createOrder = void 0;
 const Order_1 = __importDefault(require("../models/Order"));
 const Product_1 = __importDefault(require("../models/Product"));
+const ReturnRequest_1 = __importDefault(require("../models/ReturnRequest"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const orderStatus_1 = require("../utils/orderStatus");
 const orderWorkflowEvents_1 = require("../utils/orderWorkflowEvents");
@@ -19,7 +20,13 @@ const CANCELLABLE_STATUSES = [
     'processing',
     'ready_for_dispatch',
 ];
-const SELLER_PRE_PICKUP_TARGET_STATUSES = ['confirmed', 'ready_for_dispatch', 'cancelled'];
+const SELLER_PRE_PICKUP_TARGET_STATUSES = ['confirmed', 'ready_for_dispatch', 'cancelled', 'rejected'];
+const restoreOrderInventory = async (order) => {
+    if (order.order_type === 'service') {
+        return;
+    }
+    await Promise.all(order.items.map((item) => Product_1.default.updateOne({ _id: item.product }, { $inc: { stock: item.qty, sales: -item.qty } })));
+};
 // ─── Buyer endpoints ────────────────────────────────────────────────────────
 // @desc    Create a new order (buyer places order)
 // @route   POST /api/orders
@@ -28,7 +35,8 @@ const createOrder = async (req, res) => {
     try {
         const buyerId = req.user._id;
         const { productId, qty, shippingAddress, paymentMethod, notes } = req.body;
-        if (!productId || !shippingAddress) {
+        const normalizedShippingAddress = typeof shippingAddress === 'string' ? shippingAddress.trim() : '';
+        if (!productId || !normalizedShippingAddress) {
             res.status(400).json({ success: false, message: 'Product ID and shipping address are required' });
             return;
         }
@@ -39,45 +47,70 @@ const createOrder = async (req, res) => {
             res.status(404).json({ success: false, message: 'This product/service is currently unavailable' });
             return;
         }
-        const quantity = Math.max(1, parseInt(qty) || 1);
+        const quantity = Number(qty);
+        if (!Number.isInteger(quantity) || quantity < 1) {
+            res.status(400).json({ success: false, message: 'Quantity must be a whole number greater than 0' });
+            return;
+        }
         if (product.type !== 'service' && product.stock < quantity) {
             res.status(400).json({ success: false, message: `Only ${product.stock} items in stock` });
             return;
         }
         const totalAmount = product.price * quantity;
-        const order = await Order_1.default.create({
-            buyer: buyerId,
-            seller: product.seller._id || product.seller,
-            order_type: product.type === 'service' ? 'service' : 'product',
-            items: [
-                {
-                    product: product._id,
-                    name: product.name,
-                    price: product.price,
-                    qty: quantity,
-                    image: product.images?.[0] || '',
-                },
-            ],
-            totalAmount,
-            shippingAddress,
-            paymentMethod: paymentMethod || 'Cash on Delivery',
-            notes: notes || '',
-            status: 'awaiting_seller_confirmation',
-            statusHistory: [
-                { status: 'pending', changedAt: new Date(), note: 'Order placed by buyer' },
-                {
-                    status: 'awaiting_seller_confirmation',
-                    changedAt: new Date(),
-                    note: 'Waiting for seller approval',
-                },
-            ],
-        });
-        // Decrease product stock (not for services)
-        if (product.type !== 'service') {
-            await Product_1.default.updateOne({ _id: productId }, { $inc: { stock: -quantity, sales: quantity } });
+        const orderType = product.type === 'service' ? 'service' : 'product';
+        if (orderType !== 'service') {
+            const stockReserved = await Product_1.default.updateOne({
+                _id: productId,
+                status: 'active',
+                productStatus: 'ENABLED',
+                stock: { $gte: quantity },
+            }, { $inc: { stock: -quantity, sales: quantity } });
+            if (!stockReserved.modifiedCount) {
+                res.status(409).json({ success: false, message: 'Insufficient stock. Please refresh and try again.' });
+                return;
+            }
         }
         else {
-            await Product_1.default.updateOne({ _id: productId }, { $inc: { sales: quantity } });
+            await Product_1.default.updateOne({ _id: productId, status: 'active', productStatus: 'ENABLED' }, { $inc: { sales: quantity } });
+        }
+        let order;
+        try {
+            order = await Order_1.default.create({
+                buyer: buyerId,
+                seller: product.seller._id || product.seller,
+                order_type: orderType,
+                items: [
+                    {
+                        product: product._id,
+                        name: product.name,
+                        price: product.price,
+                        qty: quantity,
+                        image: product.images?.[0] || '',
+                    },
+                ],
+                totalAmount,
+                shippingAddress: normalizedShippingAddress,
+                paymentMethod: paymentMethod || 'Cash on Delivery',
+                notes: typeof notes === 'string' ? notes.trim() : '',
+                status: 'awaiting_seller_confirmation',
+                statusHistory: [
+                    { status: 'pending', changedAt: new Date(), note: 'Order placed by buyer' },
+                    {
+                        status: 'awaiting_seller_confirmation',
+                        changedAt: new Date(),
+                        note: 'Waiting for seller approval',
+                    },
+                ],
+            });
+        }
+        catch (error) {
+            if (orderType !== 'service') {
+                await Product_1.default.updateOne({ _id: productId }, { $inc: { stock: quantity, sales: -quantity } });
+            }
+            else {
+                await Product_1.default.updateOne({ _id: productId }, { $inc: { sales: -quantity } });
+            }
+            throw error;
         }
         const orderId = order._id.toString();
         const populatedSeller = isPopulatedSeller(product.seller) ? product.seller : null;
@@ -163,10 +196,7 @@ const cancelBuyerOrder = async (req, res) => {
         order.statusHistory.push({ status: order.status, changedAt: new Date(), note: 'Cancelled by buyer' });
         order.status = 'cancelled';
         await order.save();
-        // Restore stock
-        for (const item of order.items) {
-            await Product_1.default.updateOne({ _id: item.product }, { $inc: { stock: item.qty, sales: -item.qty } });
-        }
+        await restoreOrderInventory(order);
         const orderId = order._id.toString();
         (0, orderWorkflowEvents_1.emitOrderWorkflowEvent)({
             userId: String(order.buyer),
@@ -412,7 +442,7 @@ const updateOrderStatus = async (req, res) => {
         if (req.user.role === 'seller' && !SELLER_PRE_PICKUP_TARGET_STATUSES.includes(targetStatus)) {
             res.status(400).json({
                 success: false,
-                message: 'Seller can only confirm, cancel, or mark an order as package ready before pickup',
+                message: 'Seller can only confirm, reject, cancel, or mark an order as package ready before pickup',
             });
             return;
         }
@@ -429,6 +459,9 @@ const updateOrderStatus = async (req, res) => {
             note: note || `Status changed to ${(0, orderStatus_1.getOrderStatusLabel)(targetStatus)}`,
         });
         order.status = targetStatus;
+        if (targetStatus === 'cancelled' || targetStatus === 'rejected') {
+            await restoreOrderInventory(order);
+        }
         await order.save();
         const orderId = order._id.toString();
         const buyerUserId = order.buyer.toString();
@@ -436,11 +469,13 @@ const updateOrderStatus = async (req, res) => {
         const buyerMessages = {
             confirmed: 'Your order has been confirmed',
             cancelled: 'Your order has been cancelled',
+            rejected: 'Your order has been rejected',
             ready_for_dispatch: 'Your package is ready',
         };
         const sellerMessages = {
             confirmed: 'Order confirmed successfully',
             cancelled: 'Order cancelled successfully',
+            rejected: 'Order rejected successfully',
             ready_for_dispatch: 'Package marked as ready',
         };
         if (buyerMessages[targetStatus]) {
@@ -481,6 +516,14 @@ const confirmOrderReceived = async (req, res) => {
         const order = await Order_1.default.findOne({ _id: id, buyer: buyerId });
         if (!order) {
             res.status(404).json({ success: false, message: 'Order not found' });
+            return;
+        }
+        const existingReturnRequest = await ReturnRequest_1.default.findOne({ order: order._id, buyer: buyerId }).select('_id status');
+        if (existingReturnRequest) {
+            res.status(400).json({
+                success: false,
+                message: 'This order already has a return request and cannot be confirmed as completed',
+            });
             return;
         }
         const currentStatus = (0, orderStatus_1.normalizeOrderStatus)(order.status);

@@ -91,7 +91,7 @@ const populateReturnRequestForResponse = (returnRequest) => returnRequest.popula
 ]);
 const LETTERS_ONLY_PATTERN = /^[A-Za-z\s.'-]+$/;
 const ACCOUNT_NUMBER_PATTERN = /^\d{8,16}$/;
-const RETURNABLE_ORDER_STATUSES = new Set(['delivered', 'completed']);
+const RETURNABLE_ORDER_STATUSES = new Set(['delivered']);
 const normalizeText = (value) => value?.trim() || '';
 const createReturnRequest = async (req, res) => {
     try {
@@ -147,8 +147,12 @@ const createReturnRequest = async (req, res) => {
             res.status(404).json({ success: false, message: 'Order not found' });
             return;
         }
+        if (order.order_type && order.order_type !== 'product') {
+            res.status(400).json({ success: false, message: 'Returns are only available for marketplace product orders.' });
+            return;
+        }
         if (!RETURNABLE_ORDER_STATUSES.has((0, orderStatus_1.normalizeOrderStatus)(order.status))) {
-            res.status(400).json({ success: false, message: 'Only delivered or completed orders can be returned.' });
+            res.status(400).json({ success: false, message: 'Only delivered orders can be returned before confirmation.' });
             return;
         }
         if (existingRequest) {
@@ -283,6 +287,18 @@ const updateReturnRequestStatus = async (req, res) => {
         });
         returnRequest.status = status;
         await returnRequest.save();
+        if (status === 'REFUND_COMPLETED') {
+            await Order_1.default.updateOne({ _id: returnRequest.order }, {
+                $set: { status: 'refunded' },
+                $push: {
+                    statusHistory: {
+                        status: 'refunded',
+                        changedAt: new Date(),
+                        note: 'Refund completed for return request',
+                    },
+                },
+            });
+        }
         await populateReturnRequestForResponse(returnRequest);
         const actorRole = getActorRole(req.user.role);
         (0, returnWorkflowEvents_1.emitReturnWorkflowEvent)({

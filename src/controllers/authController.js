@@ -219,20 +219,16 @@ const register = async (req, res) => {
         user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
         user.isEmailVerified = false;
         await user.save();
-        // Send OTP email
-        try {
-            await (0, email_1.sendOTPEmail)(normalizedEmail, otp, trimmedFirstName);
-        }
-        catch (emailError) {
-            console.error('Failed to send OTP email:', emailError);
-            // Don't fail registration, user can resend OTP
-        }
-        // Return response - no token until email is verified
+        // Return response immediately — email sends in background
         res.status(201).json({
             message: 'Registration successful! Please check your email for the verification code.',
             requiresVerification: true,
             email: user.email,
             role: user.role
+        });
+        // Send OTP email in background (non-blocking)
+        (0, email_1.sendOTPEmail)(normalizedEmail, otp, trimmedFirstName).catch(emailError => {
+            console.error('Failed to send OTP email:', emailError);
         });
     }
     catch (error) {
@@ -291,14 +287,11 @@ const login = async (req, res) => {
                 const otp = (0, email_1.generateOTP)();
                 const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
                 await User_1.default.updateOne({ _id: user._id }, { $set: { otp, otpExpires } });
-                try {
-                    await (0, email_1.sendOTPEmail)(user.email, otp, user.firstName || 'User');
-                }
-                catch { }
                 res.status(403).json({
                     message: 'Email not verified. A new verification code has been sent to your email.',
                     requiresVerification: true, email: user.email, role: user.role
                 });
+                (0, email_1.sendOTPEmail)(user.email, otp, user.firstName || 'User').catch(() => { });
                 return;
             }
             if (!user.canLogin()) {
@@ -361,12 +354,6 @@ const login = async (req, res) => {
             const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
             // Use updateOne to avoid Mongoose validation on potentially incomplete legacy documents
             await User_1.default.updateOne({ _id: user._id }, { $set: { otp, otpExpires } });
-            try {
-                await (0, email_1.sendOTPEmail)(user.email, otp, user.firstName || 'User');
-            }
-            catch (emailError) {
-                console.error('Failed to resend OTP:', emailError);
-            }
             res.status(403).json({
                 message: 'Email not verified. A new verification code has been sent to your email.',
                 requiresVerification: true,
@@ -504,13 +491,10 @@ const verifyOTP = async (req, res) => {
         user.isEmailVerified = true;
         user.otp = null;
         user.otpExpires = null;
-        // Send welcome email
-        try {
-            await (0, email_1.sendWelcomeEmail)(user.email, user.firstName, user.role);
-        }
-        catch (emailError) {
+        // Send welcome email in background (non-blocking)
+        (0, email_1.sendWelcomeEmail)(user.email, user.firstName, user.role).catch(emailError => {
             console.error('Failed to send welcome email:', emailError);
-        }
+        });
         // If buyer (auto-approved), return token
         // If seller/mechanic (needs approval), return message
         const responseData = {
@@ -567,9 +551,11 @@ const resendOTP = async (req, res) => {
         const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
         // Use updateOne to avoid Mongoose validation on potentially incomplete legacy documents
         await User_1.default.updateOne({ _id: user._id }, { $set: { otp, otpExpires } });
-        // Send OTP email
-        await (0, email_1.sendOTPEmail)(user.email, otp, user.firstName || 'User');
         res.json({ message: 'A new verification code has been sent to your email.' });
+        // Send OTP email in background (non-blocking)
+        (0, email_1.sendOTPEmail)(user.email, otp, user.firstName || 'User').catch(err => {
+            console.error('Failed to resend OTP:', err);
+        });
     }
     catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';

@@ -40,7 +40,7 @@ const addReview = async (req, res) => {
         // Only buyers who received the item can review it.
         const deliveredOrder = await Order_1.default.findOne({
             buyer: buyerId,
-            status: 'delivered',
+            status: { $in: ['delivered', 'completed'] },
             'items.product': new mongoose_1.default.Types.ObjectId(productId),
         }).select('_id');
         if (!deliveredOrder) {

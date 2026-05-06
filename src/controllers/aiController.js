@@ -10,7 +10,12 @@ const Product_1 = __importDefault(require("../models/Product"));
 const Order_1 = __importDefault(require("../models/Order"));
 const Review_1 = __importDefault(require("../models/Review"));
 const Service_1 = __importDefault(require("../models/Service"));
-const GEMINI_MODEL_CANDIDATES = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+const GEMINI_MODELS = [
+    'gemini-flash-lite-latest',
+    'gemini-2.0-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+];
 const GLOBAL_REJECTION_MESSAGE = 'This chatbot is only for bike marketplace support. Please avoid unrelated or unwanted messages.';
 const SECRET_PATTERNS = [
     /AIza[0-9A-Za-z\-_]{20,}/g,
@@ -172,18 +177,18 @@ const getSellerCurrentReport = async (sellerId) => {
         .sort((a, b) => b.sales - a.sales)
         .slice(0, 5)
         .map((p) => ({
-        name: p.name,
-        sales: p.sales,
-        stock: p.stock,
-        price: p.price,
-    }));
+            name: p.name,
+            sales: p.sales,
+            stock: p.stock,
+            price: p.price,
+        }));
     const lowStockList = lowStock
         .sort((a, b) => a.stock - b.stock)
         .slice(0, 5)
         .map((p) => ({
-        name: p.name,
-        stock: p.stock,
-    }));
+            name: p.name,
+            stock: p.stock,
+        }));
     return {
         totalProducts,
         activeProducts,
@@ -491,19 +496,14 @@ const buildPrompt = (role, message, sellerSnapshot, hasImage) => {
         `User question: ${message}`,
     ].join('\n');
 };
-const generateLiveGeminiReply = async (apiKey, parts) => {
+const generateLiveGeminiReply = async (apiKey, promptText) => {
     const client = new generative_ai_1.GoogleGenerativeAI(apiKey);
     let lastError = 'Unknown Gemini error';
-    for (const modelName of GEMINI_MODEL_CANDIDATES) {
+    for (const modelName of GEMINI_MODELS) {
         try {
             const model = client.getGenerativeModel({ model: modelName });
             const result = await model.generateContent({
-                contents: [
-                    {
-                        role: 'user',
-                        parts: parts,
-                    },
-                ],
+                contents: [{ role: 'user', parts: [{ text: promptText }] }],
                 generationConfig: {
                     temperature: 0.7,
                     topP: 0.95,
@@ -515,10 +515,9 @@ const generateLiveGeminiReply = async (apiKey, parts) => {
                 return text;
             }
             lastError = `Empty response from model ${modelName}`;
-        }
-        catch (error) {
+        } catch (error) {
             lastError = error instanceof Error ? error.message : String(error);
-            console.error(`Gemini request failed for model ${modelName}:`, lastError);
+            console.warn(`Gemini model ${modelName} failed: ${lastError}`);
         }
     }
     throw new Error(lastError);
@@ -593,22 +592,13 @@ const askAI = async (req, res) => {
             sellerSnapshot = await getSellerAnalyticsSnapshot(userId, cleanMessage, productName);
         }
         const prompt = buildPrompt(userRole, cleanMessage, sellerSnapshot, !!parsedImage);
-        const parts = [{ text: prompt }];
-        if (parsedImage) {
-            parts.push({
-                inlineData: {
-                    mimeType: parsedImage.mimeType,
-                    data: parsedImage.data,
-                },
-            });
-        }
         let answer = 'I could not generate a response right now. Please try again.';
         try {
-            answer = await generateLiveGeminiReply(config_1.default.geminiApiKey, parts);
+            answer = await generateLiveGeminiReply(config_1.default.geminiApiKey, prompt);
         }
         catch (liveError) {
             const reason = liveError instanceof Error ? liveError.message : String(liveError);
-            console.error('All Gemini model attempts failed:', reason);
+            console.error('Gemini request failed:', reason);
             res.json({
                 success: true,
                 data: {

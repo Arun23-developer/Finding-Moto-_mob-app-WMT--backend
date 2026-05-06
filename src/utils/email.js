@@ -1,52 +1,57 @@
 "use strict";
 var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
+  return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendApprovalEmail = exports.sendWelcomeEmail = exports.sendOTPEmail = exports.generateOTP = void 0;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const config_1 = __importDefault(require("../config"));
-// Create reusable transporter using SMTP settings or Gmail fallback
-const createTransporter = () => {
-    if (!config_1.default.smtpUser || !config_1.default.smtpPass) {
-        throw new Error('SMTP credentials are not configured. Set SMTP_USER and SMTP_PASS.');
-    }
-    if (config_1.default.smtpHost) {
-        return nodemailer_1.default.createTransport({
-            host: config_1.default.smtpHost,
-            port: config_1.default.smtpPort,
-            secure: config_1.default.smtpSecure,
-            auth: {
-                user: config_1.default.smtpUser,
-                pass: config_1.default.smtpPass,
-            },
-        });
-    }
-    return nodemailer_1.default.createTransport({
-        service: 'gmail',
-        auth: {
-            user: config_1.default.smtpUser,
-            pass: config_1.default.smtpPass,
-        },
+// Singleton transporter — created once and reused for all emails
+let _transporter = null;
+const getTransporter = () => {
+  if (_transporter) return _transporter;
+  if (!config_1.default.smtpUser || !config_1.default.smtpPass) {
+    throw new Error('SMTP credentials are not configured. Set SMTP_USER and SMTP_PASS.');
+  }
+  const smtpPass = config_1.default.smtpPass.replace(/\s/g, '');
+  if (config_1.default.smtpHost) {
+    _transporter = nodemailer_1.default.createTransport({
+      host: config_1.default.smtpHost,
+      port: config_1.default.smtpPort,
+      secure: config_1.default.smtpSecure,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+      auth: { user: config_1.default.smtpUser, pass: smtpPass },
     });
+  } else {
+    _transporter = nodemailer_1.default.createTransport({
+      service: 'gmail',
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+      auth: { user: config_1.default.smtpUser, pass: smtpPass },
+    });
+  }
+  return _transporter;
 };
 const getFromAddress = () => `"${config_1.default.smtpFromName}" <${config_1.default.smtpUser}>`;
 // Generate a 6-digit OTP
 const generateOTP = () => {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+  return Math.floor(100000 + Math.random() * 900000).toString();
 };
 exports.generateOTP = generateOTP;
 // Split OTP into individual styled digits
 const otpDigitsHtml = (otp) => {
-    return otp
-        .split('')
-        .map((digit) => `
+  return otp
+    .split('')
+    .map((digit) => `
       <td style="padding: 0 4px;">
         <div style="width: 48px; height: 56px; background: linear-gradient(180deg, #FFFFFF 0%, #F9FAFB 100%); border: 2px solid #E0E7FF; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-family: 'Courier New', Courier, monospace; font-size: 28px; font-weight: 800; color: #4F46E5; line-height: 56px; text-align: center;">
           ${digit}
         </div>
       </td>`)
-        .join('');
+    .join('');
 };
 // Shared email wrapper
 const emailWrapper = (content) => `
@@ -97,8 +102,8 @@ const emailWrapper = (content) => `
 `;
 // ─── OTP VERIFICATION EMAIL ────────────────────────────────────────
 const sendOTPEmail = async (email, otp, name) => {
-    const transporter = createTransporter();
-    const content = `
+  const transporter = getTransporter();
+  const content = `
     <!-- Header -->
     <tr>
       <td style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 50%, #9333EA 100%); padding: 40px 32px 36px; text-align: center;">
@@ -188,43 +193,43 @@ const sendOTPEmail = async (email, otp, name) => {
       </td>
     </tr>
   `;
-    const mailOptions = {
-        from: getFromAddress(),
-        to: email,
-        subject: `${otp} is your Finding Moto verification code`,
-        html: emailWrapper(content),
-    };
-    await transporter.sendMail(mailOptions);
+  const mailOptions = {
+    from: getFromAddress(),
+    to: email,
+    subject: `${otp} is your Finding Moto verification code`,
+    html: emailWrapper(content),
+  };
+  await transporter.sendMail(mailOptions);
 };
 exports.sendOTPEmail = sendOTPEmail;
 // ─── WELCOME EMAIL ─────────────────────────────────────────────────
 const sendWelcomeEmail = async (email, name, role) => {
-    const transporter = createTransporter();
-    const roleConfig = {
-        buyer: {
-            emoji: '🛒',
-            message: 'You\'re all set! Start browsing motorcycles, parts & accessories from trusted sellers across the platform.',
-            color: '#4F46E5',
-        },
-        seller: {
-            emoji: '🏪',
-            message: 'Your seller account is pending admin approval. We\'ll send you an email as soon as your account is reviewed and approved.',
-            color: '#059669',
-        },
-        mechanic: {
-            emoji: '🔧',
-            message: 'Your mechanic account is pending admin approval. We\'ll send you an email once your workshop profile is reviewed and approved.',
-            color: '#D97706',
-        },
-        delivery_agent: {
-            emoji: '🚚',
-            message: 'Your delivery agent account is active and ready to use.',
-            color: '#2563EB',
-        },
-    };
-    const rc = roleConfig[role] || { emoji: '🏍️', message: 'Welcome aboard!', color: '#4F46E5' };
-    const isPending = role === 'seller' || role === 'mechanic';
-    const content = `
+  const transporter = getTransporter();
+  const roleConfig = {
+    buyer: {
+      emoji: '🛒',
+      message: 'You\'re all set! Start browsing motorcycles, parts & accessories from trusted sellers across the platform.',
+      color: '#4F46E5',
+    },
+    seller: {
+      emoji: '🏪',
+      message: 'Your seller account is pending admin approval. We\'ll send you an email as soon as your account is reviewed and approved.',
+      color: '#059669',
+    },
+    mechanic: {
+      emoji: '🔧',
+      message: 'Your mechanic account is pending admin approval. We\'ll send you an email once your workshop profile is reviewed and approved.',
+      color: '#D97706',
+    },
+    delivery_agent: {
+      emoji: '🚚',
+      message: 'Your delivery agent account is active and ready to use.',
+      color: '#2563EB',
+    },
+  };
+  const rc = roleConfig[role] || { emoji: '🏍️', message: 'Welcome aboard!', color: '#4F46E5' };
+  const isPending = role === 'seller' || role === 'mechanic';
+  const content = `
     <!-- Header -->
     <tr>
       <td style="background: linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%); padding: 40px 32px 36px; text-align: center;">
@@ -301,19 +306,19 @@ const sendWelcomeEmail = async (email, name, role) => {
       </td>
     </tr>
   `;
-    const mailOptions = {
-        from: getFromAddress(),
-        to: email,
-        subject: `Welcome to Finding Moto, ${name}! 🏍️`,
-        html: emailWrapper(content),
-    };
-    await transporter.sendMail(mailOptions);
+  const mailOptions = {
+    from: getFromAddress(),
+    to: email,
+    subject: `Welcome to Finding Moto, ${name}! 🏍️`,
+    html: emailWrapper(content),
+  };
+  await transporter.sendMail(mailOptions);
 };
 exports.sendWelcomeEmail = sendWelcomeEmail;
 // ─── APPROVAL / REJECTION EMAIL ────────────────────────────────────
 const sendApprovalEmail = async (email, name, approved, notes) => {
-    const transporter = createTransporter();
-    const content = `
+  const transporter = getTransporter();
+  const content = `
     <!-- Header -->
     <tr>
       <td style="background: linear-gradient(135deg, ${approved ? '#059669 0%, #10B981 100%' : '#DC2626 0%, #EF4444 100%'}); padding: 40px 32px 36px; text-align: center;">
@@ -343,8 +348,8 @@ const sendApprovalEmail = async (email, name, approved, notes) => {
         </p>
         <p style="margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; line-height: 1.7; color: #6B7280;">
           ${approved
-        ? 'Great news! Our admin team has reviewed and <strong style="color: #059669;">approved</strong> your account. You now have full access to Finding Moto.'
-        : 'We\'ve reviewed your account application. Unfortunately, your account was <strong style="color: #DC2626;">not approved</strong> at this time.'}
+      ? 'Great news! Our admin team has reviewed and <strong style="color: #059669;">approved</strong> your account. You now have full access to Finding Moto.'
+      : 'We\'ve reviewed your account application. Unfortunately, your account was <strong style="color: #DC2626;">not approved</strong> at this time.'}
         </p>
       </td>
     </tr>
@@ -467,14 +472,14 @@ const sendApprovalEmail = async (email, name, approved, notes) => {
       </td>
     </tr>
   `;
-    const mailOptions = {
-        from: getFromAddress(),
-        to: email,
-        subject: approved
-            ? `✅ Your Finding Moto account has been approved!`
-            : `Account Application Update - Finding Moto`,
-        html: emailWrapper(content),
-    };
-    await transporter.sendMail(mailOptions);
+  const mailOptions = {
+    from: getFromAddress(),
+    to: email,
+    subject: approved
+      ? `✅ Your Finding Moto account has been approved!`
+      : `Account Application Update - Finding Moto`,
+    html: emailWrapper(content),
+  };
+  await transporter.sendMail(mailOptions);
 };
 exports.sendApprovalEmail = sendApprovalEmail;

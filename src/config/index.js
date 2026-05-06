@@ -21,6 +21,7 @@ const config = {
     smtpPass: process.env.SMTP_PASS || '',
     smtpFromName: process.env.SMTP_FROM_NAME || 'Finding Moto',
     geminiApiKey: process.env.GEMINI_API_KEY || '',
+    openRouterApiKey: process.env.ML_API_KEY || '',
     cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
     cloudinaryApiKey: process.env.CLOUDINARY_API_KEY || '',
     cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET || ''
